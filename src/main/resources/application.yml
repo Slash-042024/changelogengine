@@ -1,0 +1,36 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: changelog-engine-backend
+
+  # File upload size limits for pom.xml uploads
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+  # PostgreSQL Local Database Configuration
+  datasource:
+    url: jdbc:postgresql://localhost:5432/changelog_db
+    username: postgres
+    password: postgrespassword
+    driver-class-name: org.postgresql.Driver
+
+  # JPA & Hibernate Settings
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+# Logging configuration for debugging
+logging:
+  level:
+    root: INFO
+    com.changelogengine: DEBUG
