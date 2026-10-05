@@ -37,11 +37,11 @@ public class AsyncAuditService {
 
     @Async("astTaskExecutor")
     public void processAuditAsync(UUID jobId, InputStream inputStream, String targetVersion) {
-        jobs.markInProgress(jobId);
-        log.info("Processing audit job {}", jobId);
         int dependencyCount = 0;
         List<BreakingChangeDto> changes = new ArrayList<>();
         try (InputStream stream = inputStream) {
+            jobs.markInProgress(jobId);
+            log.info("Processing audit job {}", jobId);
             List<PomParserService.MavenDependency> dependencies = pomParserService.parseDependencies(stream);
             dependencyCount = dependencies.size();
             for (PomParserService.MavenDependency dep : dependencies) {

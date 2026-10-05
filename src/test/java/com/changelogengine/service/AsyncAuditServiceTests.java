@@ -47,7 +47,10 @@ class AsyncAuditServiceTests {
         when(client.downloadJar("g", "a", "2")).thenReturn(targetJar);
         when(engine.compareJars(currentJar.toFile(), targetJar.toFile())).thenReturn(List.of());
         try (var context = new AnnotationConfigApplicationContext()) {
-            context.register(AsyncConfig.class, AuditJobRepository.class, AsyncAuditService.class);
+            context.register(AsyncConfig.class, AsyncAuditService.class);
+            var store = new RedisTestStore();
+            context.registerBean("auditJobRepository", AuditJobRepository.class,
+                    () -> new AuditJobRepository(store.redis));
             context.registerBean(PomParserService.class, () -> parser);
             context.registerBean(MavenCentralClient.class, () -> client);
             context.registerBean(AstDiffEngine.class, () -> engine);
@@ -77,8 +80,8 @@ class AsyncAuditServiceTests {
             verify(engine).compareJars(currentJar.toFile(), targetJar.toFile());
             assertFalse(Files.exists(currentJar));
             assertFalse(Files.exists(targetJar));
-            assertEquals(200, controller.getStatus(id).getStatusCode().value());
-            assertEquals(404, controller.getStatus(UUID.randomUUID()).getStatusCode().value());
+            assertEquals(200, controller.getStatus(id).block().getStatusCode().value());
+            assertEquals(404, controller.getStatus(UUID.randomUUID()).block().getStatusCode().value());
         } finally {
             release.countDown();
             Files.deleteIfExists(currentJar);
@@ -88,7 +91,7 @@ class AsyncAuditServiceTests {
 
     @Test
     void processingFailureMarksJobFailedAndClosesStream() throws Exception {
-        var jobs = new AuditJobRepository();
+        var jobs = new AuditJobRepository(new RedisTestStore().redis);
         var parser = mock(PomParserService.class);
         when(parser.parseDependencies(any())).thenThrow(new IllegalArgumentException("Invalid POM"));
         var service = new AsyncAuditService(jobs, parser, mock(MavenCentralClient.class), mock(AstDiffEngine.class));
@@ -106,7 +109,7 @@ class AsyncAuditServiceTests {
 
     @Test
     void rejectedSubmissionReturns503AndDoesNotLeaveQueuedJob() {
-        var jobs = new AuditJobRepository();
+        var jobs = new AuditJobRepository(new RedisTestStore().redis);
         var service = mock(AsyncAuditService.class);
         doThrow(new TaskRejectedException("full")).when(service).processAuditAsync(any(), any(), anyString());
         var controller = new AuditController(jobs, service);

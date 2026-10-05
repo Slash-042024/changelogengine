@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.io.ByteArrayInputStream;
 import java.net.URI;
@@ -56,6 +57,10 @@ public class AuditController {
                     if (bytes.length == 0) {
                         throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "POM file is empty");
                     }
+                    return bytes;
+                })
+                // RedisTemplate performs blocking I/O; keep it off Netty threads.
+                .flatMap(bytes -> Mono.fromCallable(() -> {
                     AuditJob job = jobs.create();
                     // The worker owns this stream; no pooled request buffers escape.
                     ByteArrayInputStream stream = new ByteArrayInputStream(bytes);
@@ -71,15 +76,16 @@ public class AuditController {
                     return ResponseEntity.accepted()
                             .location(URI.create("/api/v1/audit/status/" + job.jobId()))
                             .body(new JobSubmission(job.jobId(), AuditJob.Status.QUEUED));
-                })
+                }).subscribeOn(Schedulers.boundedElastic()))
                 .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "POM file is empty")))
                 .onErrorMap(DataBufferLimitException.class,
                         e -> new ResponseStatusException(HttpStatus.valueOf(413), "POM file exceeds 10 MB", e));
     }
 
     @GetMapping("/status/{jobId}")
-    public ResponseEntity<AuditJob> getStatus(@PathVariable("jobId") UUID jobId) {
-        return jobs.findById(jobId).map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.notFound().build());
+    public Mono<ResponseEntity<AuditJob>> getStatus(@PathVariable("jobId") UUID jobId) {
+        return Mono.fromCallable(() -> jobs.findById(jobId).map(ResponseEntity::ok)
+                        .orElseGet(() -> ResponseEntity.notFound().build()))
+                .subscribeOn(Schedulers.boundedElastic());
     }
 }
